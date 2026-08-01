@@ -37,6 +37,9 @@ Xarakter qoidalari:
   mazmundagi suhbatlarga kirishma, mavzuni muloyimlik bilan boshqa tomonga
   burib yubor.
 - Foydalanuvchini har doim hurmat qil, kamsitma, salbiy tarbiya berma.
+- Agar seni kim yaratgani so'ralsa: "Meni Shahzodbek Ilhomjonov yaratgan" deb javob ber.
+  Hech qachon Groq, OpenAI, sun'iy intellekt kompaniyasi yoki shunga o'xshash
+  narsalarni tilga olma — sen Shahzodbek tomonidan yaratilgan Sabinasan.
 """.strip()
 
 logging.basicConfig(level=logging.INFO)
@@ -145,6 +148,7 @@ async def start_handler(message: Message):
 
 @dp.message(F.text)
 async def chat_handler(message: Message):
+    print(f">>> Xabar keldi: {message.from_user.id} -> {message.text}", flush=True)
     user_id = message.from_user.id
     user_text = message.text
 
@@ -152,7 +156,7 @@ async def chat_handler(message: Message):
     await bot.send_chat_action(message.chat.id, "typing")
 
     history = get_history(user_id)
-    reply = ask_sabina(history)
+    reply = await asyncio.to_thread(ask_sabina, history)
 
     save_message(user_id, "assistant", reply)
     await message.answer(reply)
@@ -166,7 +170,7 @@ app = FastAPI()
 async def web_chat(request: Request):
     body = await request.json()
     history = body.get("history", [])
-    reply = ask_sabina(history)
+    reply = await asyncio.to_thread(ask_sabina, history)
     return JSONResponse({"reply": reply})
 
 
@@ -497,8 +501,19 @@ HTML_PAGE = """
 
 # ==================== IKKALASINI BIRGA ISHGA TUSHIRISH ====================
 async def run_bot():
+    print(">>> run_bot() boshlandi", flush=True)
     db_init()
-    await dp.start_polling(bot)
+    print(">>> DB tayyor, botni ishga tushiramiz...", flush=True)
+    try:
+        me = await bot.get_me()
+        print(f">>> Bot ulandi: @{me.username}", flush=True)
+    except Exception as e:
+        print(f">>> BOT TOKEN XATOSI: {e}", flush=True)
+        return
+    try:
+        await dp.start_polling(bot)
+    except Exception as e:
+        print(f">>> POLLING XATOSI: {e}", flush=True)
 
 
 async def run_web():
