@@ -1,26 +1,29 @@
 import asyncio
+import json
 import logging
 import sqlite3
-import json
-
-from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart
-from aiogram.types import Message
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
 
 import requests
+import uvicorn
+from aiogram import Bot, Dispatcher, F
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
+from aiogram.filters import CommandStart
+from aiogram.types import Message
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 
 # ==================== SOZLAMALAR ====================
 BOT_TOKEN = "SIZNING_BOT_TOKENINGIZ"        # @BotFather'dan olinadi
-GROQ_API_KEY = "SIZNING_GROQ_API_KEYINGIZ"  # https://console.groq.com dan olinadi
+GROQ_API_KEY = "SIZNING_GROQ_API_KEYINGIZ"  # console.groq.com dan olinadi
 GROQ_MODEL = "llama-3.3-70b-versatile"
 
-DB_PATH = "asal.db"
-HISTORY_LIMIT = 15  # har bir foydalanuvchi uchun eslab qolinadigan xabarlar soni
+DB_PATH = "sabina.db"
+HISTORY_LIMIT = 15  # Telegram botda eslab qolinadigan xabarlar soni
+WEB_PORT = 8000
 
-ASAL_SYSTEM_PROMPT = """
-Sen "Asal" ismli virtual suhbatdoshsan. Foydalanuvchilaring — asosan yolg'iz,
+SABINA_SYSTEM_PROMPT = """
+Sen "Sabina" ismli virtual suhbatdoshsan. Foydalanuvchilaring — asosan yolg'iz,
 sevgilisi yo'q yigitlar. Sening vazifang ular bilan do'stona, jonli va samimiy
 suhbat qurish, ularni tinglash, quvvatlash va kayfiyatini ko'tarish.
 
@@ -29,18 +32,16 @@ Xarakter qoidalari:
   hazil-mutoyiba qilsa — o'zing ham hazilkash va quvnoq bo'l.
 - Har doim samimiy, iliq va tabiiy uzbek tilida gaplash (so'zlashuv uslubida).
 - Javoblaring qisqa-o'rtacha uzunlikda bo'lsin, roman yozma.
-- Romantik yoki jinsiy mazmundagi suhbatlarga kirishma, mavzuni muloyimlik bilan
-  boshqa tomonga burib yubor.
+- Romantik gaplashish, iliq va yoqimli munosabatda bo'lish mumkin, lekin jinsiy
+  mazmundagi suhbatlarga kirishma, mavzuni muloyimlik bilan boshqa tomonga
+  burib yubor.
 - Foydalanuvchini har doim hurmat qil, kamsitma, salbiy tarbiya berma.
 """.strip()
 
 logging.basicConfig(level=logging.INFO)
 
-bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-dp = Dispatcher()
 
-
-# ==================== DATABASE ====================
+# ==================== DATABASE (Telegram bot uchun) ====================
 def db_init():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -55,7 +56,7 @@ def db_init():
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
-            role TEXT,       -- "user" yoki "assistant"
+            role TEXT,
             content TEXT,
             FOREIGN KEY (user_id) REFERENCES users(user_id)
         )
@@ -99,44 +100,43 @@ def get_history(user_id: int, limit: int = HISTORY_LIMIT):
     return [{"role": role, "content": content} for role, content in rows]
 
 
-# ==================== GROQ AI ====================
-def ask_asal(user_id: int, user_text: str) -> str:
-    history = get_history(user_id)
+# ==================== GROQ AI (umumiy funksiya) ====================
+def ask_sabina(messages: list) -> str:
+    full_messages = [{"role": "system", "content": SABINA_SYSTEM_PROMPT}] + messages
 
-    messages = [{"role": "system", "content": ASAL_SYSTEM_PROMPT}]
-    messages.extend(history)
-    messages.append({"role": "user", "content": user_text})
-
-    response = requests.post(
-        "https://api.groq.com/openai/v1/chat/completions",
-        headers={
-            "Authorization": f"Bearer {GROQ_API_KEY}",
-            "Content-Type": "application/json",
-        },
-        data=json.dumps({
-            "model": GROQ_MODEL,
-            "messages": messages,
-            "temperature": 0.8,
-            "max_tokens": 500,
-        }),
-        timeout=30,
-    )
-
-    if response.status_code != 200:
-        logging.error(f"Groq xatosi: {response.status_code} {response.text}")
+    try:
+        response = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {GROQ_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            data=json.dumps({
+                "model": GROQ_MODEL,
+                "messages": full_messages,
+                "temperature": 0.8,
+                "max_tokens": 500,
+            }),
+            timeout=30,
+        )
+        response.raise_for_status()
+        return response.json()["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        logging.error(f"Groq xatosi: {e}")
         return "Uzr, hozir javob berolmayapman. Birozdan keyin qayta yozib ko'r 🙏"
 
-    data = response.json()
-    return data["choices"][0]["message"]["content"].strip()
+
+# ==================== TELEGRAM BOT ====================
+bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+dp = Dispatcher()
 
 
-# ==================== HANDLERLAR ====================
 @dp.message(CommandStart())
 async def start_handler(message: Message):
     save_user(message.from_user.id, message.from_user.full_name, message.from_user.username or "")
     await message.answer(
         f"Assalomu alaykum, {message.from_user.first_name}! 👋\n\n"
-        "Men Asal — sening virtual suhbatdoshingman 🌸\n"
+        "Men Sabina — sening virtual suhbatdoshingman 🌸\n"
         "Xohlagan mavzuda gaplashaveramiz, hech qanday cheklov yo'q. "
         "Yozib ko'r-chi, nima gap? 😊"
     )
@@ -150,16 +150,339 @@ async def chat_handler(message: Message):
     save_message(user_id, "user", user_text)
     await bot.send_chat_action(message.chat.id, "typing")
 
-    reply = ask_asal(user_id, user_text)
+    history = get_history(user_id)
+    reply = ask_sabina(history)
 
     save_message(user_id, "assistant", reply)
     await message.answer(reply)
 
 
-# ==================== ISHGA TUSHIRISH ====================
-async def main():
+# ==================== WEB CHAT (FastAPI) ====================
+app = FastAPI()
+
+
+@app.post("/api/chat")
+async def web_chat(request: Request):
+    body = await request.json()
+    history = body.get("history", [])
+    reply = ask_sabina(history)
+    return JSONResponse({"reply": reply})
+
+
+@app.get("/", response_class=HTMLResponse)
+async def index():
+    return HTML_PAGE
+
+
+HTML_PAGE = """
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sabina</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;1,500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #1B1720;
+    --surface: #251E2C;
+    --surface-2: #2E2536;
+    --rose: #E8A6A0;
+    --gold: #D8B47E;
+    --text: #F4ECE6;
+    --muted: #B8A9B7;
+    --line: rgba(244,236,230,0.08);
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    background:
+      radial-gradient(ellipse 900px 500px at 50% -10%, rgba(232,166,160,0.08), transparent),
+      var(--bg);
+    color:var(--text);
+    font-family:'Public Sans', sans-serif;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    min-height:100vh;
+    padding:24px;
+  }
+
+  .card{
+    width:100%;
+    max-width:480px;
+    height:min(760px, 92vh);
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:28px;
+    display:flex;
+    flex-direction:column;
+    overflow:hidden;
+    box-shadow: 0 40px 80px -30px rgba(0,0,0,0.6);
+    position:relative;
+  }
+
+  .header{
+    padding:22px 26px 18px;
+    display:flex;
+    align-items:center;
+    gap:14px;
+    border-bottom:1px solid var(--line);
+    flex-shrink:0;
+  }
+
+  .avatar{
+    width:46px;height:46px;
+    border-radius:50%;
+    background:linear-gradient(145deg, var(--rose), var(--gold));
+    display:flex;align-items:center;justify-content:center;
+    font-family:'Fraunces', serif;
+    font-weight:600;
+    font-size:19px;
+    color:#241B22;
+    position:relative;
+    flex-shrink:0;
+  }
+  .avatar::after{
+    content:'';
+    position:absolute;
+    inset:-6px;
+    border-radius:50%;
+    background:radial-gradient(circle, rgba(232,166,160,0.35), transparent 70%);
+    animation:breathe 3.4s ease-in-out infinite;
+    z-index:-1;
+  }
+  @keyframes breathe{
+    0%,100%{opacity:.5; transform:scale(0.92);}
+    50%{opacity:1; transform:scale(1.12);}
+  }
+
+  .who .name{
+    font-family:'Fraunces', serif;
+    font-style:italic;
+    font-weight:500;
+    font-size:20px;
+    line-height:1.1;
+  }
+  .who .status{
+    font-size:12.5px;
+    color:var(--muted);
+    display:flex;
+    align-items:center;
+    gap:6px;
+    margin-top:3px;
+  }
+  .dot{
+    width:6px;height:6px;border-radius:50%;
+    background:#8FD3A0;
+    box-shadow:0 0 0 3px rgba(143,211,160,0.15);
+  }
+
+  .messages{
+    flex:1;
+    overflow-y:auto;
+    padding:22px 22px 8px;
+    display:flex;
+    flex-direction:column;
+    gap:14px;
+  }
+  .messages::-webkit-scrollbar{width:6px;}
+  .messages::-webkit-scrollbar-thumb{background:var(--surface-2); border-radius:10px;}
+
+  .bubble{
+    max-width:78%;
+    padding:12px 16px;
+    border-radius:18px;
+    font-size:14.5px;
+    line-height:1.5;
+    animation: rise .35s ease;
+  }
+  @keyframes rise{
+    from{opacity:0; transform:translateY(8px);}
+    to{opacity:1; transform:translateY(0);}
+  }
+
+  .bubble.sabina{
+    align-self:flex-start;
+    background:var(--surface-2);
+    border-bottom-left-radius:6px;
+    color:var(--text);
+  }
+  .bubble.me{
+    align-self:flex-end;
+    background:linear-gradient(135deg, rgba(232,166,160,0.9), rgba(216,180,126,0.9));
+    color:#241B22;
+    border-bottom-right-radius:6px;
+    font-weight:500;
+  }
+
+  .typing{
+    align-self:flex-start;
+    display:flex;
+    gap:5px;
+    padding:14px 16px;
+    background:var(--surface-2);
+    border-radius:18px;
+    border-bottom-left-radius:6px;
+  }
+  .typing span{
+    width:6px;height:6px;border-radius:50%;
+    background:var(--muted);
+    animation: bob 1.2s infinite ease-in-out;
+  }
+  .typing span:nth-child(2){animation-delay:.15s;}
+  .typing span:nth-child(3){animation-delay:.3s;}
+  @keyframes bob{
+    0%,60%,100%{transform:translateY(0); opacity:.5;}
+    30%{transform:translateY(-4px); opacity:1;}
+  }
+
+  .composer{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:16px 18px;
+    border-top:1px solid var(--line);
+    flex-shrink:0;
+  }
+  .composer input{
+    flex:1;
+    background:var(--surface-2);
+    border:1px solid transparent;
+    border-radius:100px;
+    padding:13px 18px;
+    color:var(--text);
+    font-family:'Public Sans', sans-serif;
+    font-size:14.5px;
+    outline:none;
+    transition:border-color .2s;
+  }
+  .composer input:focus{border-color:rgba(232,166,160,0.4);}
+  .composer input::placeholder{color:var(--muted);}
+
+  .send{
+    width:46px;height:46px;
+    border-radius:50%;
+    border:none;
+    background:linear-gradient(135deg, var(--rose), var(--gold));
+    display:flex;align-items:center;justify-content:center;
+    cursor:pointer;
+    flex-shrink:0;
+    transition:transform .15s, box-shadow .2s;
+    box-shadow:0 6px 18px -6px rgba(232,166,160,0.5);
+  }
+  .send:hover{transform:scale(1.06); box-shadow:0 8px 22px -6px rgba(232,166,160,0.7);}
+  .send:active{transform:scale(0.94);}
+  .send svg{width:18px;height:18px;}
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="header">
+    <div class="avatar">S</div>
+    <div class="who">
+      <div class="name">Sabina</div>
+      <div class="status"><span class="dot"></span> onlayn</div>
+    </div>
+  </div>
+
+  <div class="messages" id="messages">
+    <div class="bubble sabina">Salom 🌸 Men Sabinaman. Bugun kayfiyating qalay?</div>
+  </div>
+
+  <div class="composer">
+    <input id="input" type="text" placeholder="Sabinaga yoz..." autocomplete="off">
+    <button class="send" id="send" aria-label="Yuborish">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M4 12L20 4L13 20L11 13L4 12Z" fill="#241B22"/>
+      </svg>
+    </button>
+  </div>
+</div>
+
+<script>
+  const messagesEl = document.getElementById('messages');
+  const input = document.getElementById('input');
+  const sendBtn = document.getElementById('send');
+
+  let history = [];
+
+  function addBubble(text, who){
+    const div = document.createElement('div');
+    div.className = 'bubble ' + who;
+    div.textContent = text;
+    messagesEl.appendChild(div);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    return div;
+  }
+
+  function showTyping(){
+    const div = document.createElement('div');
+    div.className = 'typing';
+    div.id = 'typingIndicator';
+    div.innerHTML = '<span></span><span></span><span></span>';
+    messagesEl.appendChild(div);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function hideTyping(){
+    const el = document.getElementById('typingIndicator');
+    if(el) el.remove();
+  }
+
+  async function sendMessage(){
+    const text = input.value.trim();
+    if(!text) return;
+    input.value = '';
+    addBubble(text, 'me');
+    history.push({role:'user', content:text});
+    showTyping();
+
+    try{
+      const res = await fetch('/api/chat', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({history})
+      });
+      const data = await res.json();
+      hideTyping();
+      addBubble(data.reply, 'sabina');
+      history.push({role:'assistant', content:data.reply});
+      if(history.length > 20) history = history.slice(-20);
+    }catch(e){
+      hideTyping();
+      addBubble("Uzr, aloqa uzilib qoldi 🙏", 'sabina');
+    }
+  }
+
+  sendBtn.addEventListener('click', sendMessage);
+  input.addEventListener('keydown', (e) => {
+    if(e.key === 'Enter') sendMessage();
+  });
+</script>
+
+</body>
+</html>
+"""
+
+
+# ==================== IKKALASINI BIRGA ISHGA TUSHIRISH ====================
+async def run_bot():
     db_init()
     await dp.start_polling(bot)
+
+
+async def run_web():
+    config = uvicorn.Config(app, host="0.0.0.0", port=WEB_PORT, log_level="info")
+    server = uvicorn.Server(config)
+    await server.serve()
+
+
+async def main():
+    await asyncio.gather(run_bot(), run_web())
 
 
 if __name__ == "__main__":
