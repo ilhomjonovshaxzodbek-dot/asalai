@@ -281,6 +281,19 @@ HTML_PAGE = """
     box-shadow:0 0 0 3px rgba(143,211,160,0.15);
   }
 
+  .tg-link{
+    margin-left:auto;
+    width:38px;height:38px;
+    border-radius:50%;
+    background:var(--surface-2);
+    display:flex;align-items:center;justify-content:center;
+    flex-shrink:0;
+    transition:background .2s, transform .15s;
+    text-decoration:none;
+  }
+  .tg-link svg{width:18px;height:18px;}
+  .tg-link:hover{background:rgba(232,166,160,0.18); transform:scale(1.07);}
+
   .messages{
     flex:1;
     overflow-y:auto;
@@ -310,6 +323,12 @@ HTML_PAGE = """
     background:var(--surface-2);
     border-bottom-left-radius:6px;
     color:var(--text);
+  }
+  .bubble.sabina .inline-link{
+    color:var(--rose);
+    font-weight:600;
+    text-decoration:underline;
+    text-underline-offset:2px;
   }
   .bubble.me{
     align-self:flex-end;
@@ -388,10 +407,16 @@ HTML_PAGE = """
       <div class="name">Sabina</div>
       <div class="status"><span class="dot"></span> onlayn</div>
     </div>
+    <a href="https://t.me/sabina0138161bot" target="_blank" class="tg-link" title="Telegramda ochish">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M21.5 4.5L2.75 11.9c-1.2.47-1.19 1.13-.22 1.42l4.78 1.49 1.84 5.6c.22.6.35.84.7.84.28 0 .4-.13.55-.28l2.7-2.62 4.8 3.56c.88.49 1.52.24 1.74-.82l3.15-14.8c.31-1.3-.5-1.89-1.36-1.55z" stroke="#F4ECE6" stroke-width="1.4" stroke-linejoin="round"/>
+      </svg>
+    </a>
   </div>
 
   <div class="messages" id="messages">
     <div class="bubble sabina">Salom 🌸 Men Sabinaman. Bugun kayfiyating qalay?</div>
+    <div class="bubble sabina">Aytgancha, mana mening Telegramim: <a href="https://t.me/sabina0138161bot" target="_blank" class="inline-link">@sabina0138161bot</a> — istasang shu yerda ham yozishaveramiz 😊</div>
   </div>
 
   <div class="composer">
