@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 import sqlite3
 
 import requests
@@ -14,13 +15,13 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 # ==================== SOZLAMALAR ====================
-BOT_TOKEN = "SIZNING_BOT_TOKENINGIZ"        # @BotFather'dan olinadi
-GROQ_API_KEY = "SIZNING_GROQ_API_KEYINGIZ"  # console.groq.com dan olinadi
+BOT_TOKEN = os.environ["BOT_TOKEN"]
+GROQ_API_KEY = os.environ["GROQ_API_KEY"]
 GROQ_MODEL = "llama-3.3-70b-versatile"
 
 DB_PATH = "sabina.db"
 HISTORY_LIMIT = 15  # Telegram botda eslab qolinadigan xabarlar soni
-WEB_PORT = 8000
+WEB_PORT = int(os.environ.get("PORT", 8000))
 
 SABINA_SYSTEM_PROMPT = """
 Sen "Sabina" ismli virtual suhbatdoshsan. Foydalanuvchilaring — asosan yolg'iz,
